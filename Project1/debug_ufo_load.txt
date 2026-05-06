@@ -1,0 +1,4 @@
+ufo_count=3
+ufo[0]: x=300 y=150 hp=5 alive=1 attack=0 death=0
+ufo[1]: x=500 y=600 hp=5 alive=1 attack=0 death=0
+ufo[2]: x=700 y=150 hp=5 alive=1 attack=0 death=0
