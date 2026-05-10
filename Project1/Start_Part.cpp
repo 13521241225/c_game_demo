@@ -19,6 +19,10 @@
 #define FPS 60
 #define MAX_PLAYER_HP 10
 #define DEMON_MAX_HP 5
+// 蓝色恶魔显示/碰撞尺寸（比玩家小）
+#define BLUE_DEMON_SIZE 60
+#define GRAY_DEMON_MAX_HP 20
+#define BLACK_DEMON_MAX_HP 5
 
 //结构体定义
 
@@ -40,6 +44,32 @@ typedef struct Demon {
     bool is_attacking; // 是否正在攻击
 } Demon;
 
+// 蓝色 Demon（新怪物）
+typedef struct BlueDemon {
+    int x, y;
+    int hp;
+    int shoot_cd; // 冷却（帧数）
+    int death_frame;
+    bool alive;
+} BlueDemon;
+
+// 灰色守护者
+typedef struct GrayDemon {
+    int x, y;
+    int hp;
+    int death_frame;
+    bool alive;
+} GrayDemon;
+
+// 黑色守护者
+typedef struct BlackDemon {
+    int x, y;
+    int hp;
+    int heal_cd;
+    int death_frame;
+    bool alive;
+} BlackDemon;
+
 // 怪物ufo状态结构体
 typedef struct Ufo {
     int x, y;
@@ -54,6 +84,7 @@ typedef struct Bullet {
     int x, y;
     float dx, dy;  // 移动方向向量
     bool friendly;
+    bool is_heal;   // 是否为治疗弹
 } Bullet;
 
 // 图片资源结构体（集中管理所有图片）
@@ -130,6 +161,9 @@ typedef struct GameState {
     PlayerAccount* current_player;
     std::vector<Bullet> bullets;
     std::vector<Demon> demons;
+    std::vector<BlueDemon> blue_demons;
+    std::vector<GrayDemon> gray_demons;
+    std::vector<BlackDemon> black_demons;
     std::vector<Ufo> ufo;
     int wall_map[16][26];
 } GameState;
@@ -170,6 +204,9 @@ void draw_player_hp_bar(int hp);
 void draw_player1_hp_bar(int hp);
 void draw_player2_hp_bar(int hp);
 void draw_demon_hp_bar(Demon* demon);
+void draw_blue_demon_hp_bar(BlueDemon* bd);
+void draw_gray_demon_hp_bar(GrayDemon* gd);
+void draw_black_demon_hp_bar(BlackDemon* kd);
 void draw_player_animation(GameState* state, GameResources* res);
 void draw_demon_animation(GameState* state, GameResources* res);
 void draw_bullets(GameState* state);
@@ -220,6 +257,7 @@ int main() {
         closegraph();
         return 0;
     }
+
     save_players_to_file(player_list, &state);
 
     // 进入大厅
@@ -553,10 +591,13 @@ bool check_player_demon_collision(POINT player_pos, Demon* demon) {
 
 // 检测玩家与子弹碰撞
 bool check_player_bullet_collision(POINT player_pos, Bullet* bullet) {
-    return (player_pos.x + PLAYER_SIZE * 2 / 3 > bullet->x) &&
-        (player_pos.x + PLAYER_SIZE / 4 < bullet->x + PLAYER_SIZE) &&
-        (player_pos.y + PLAYER_SIZE > bullet->y) &&
-        (player_pos.y + PLAYER_SIZE * 2 / 3 < bullet->y + PLAYER_SIZE);
+    // 使用与 check_player_collision 相同的碰撞箱
+    int left   = player_pos.x + PLAYER_SIZE / 4;
+    int right  = player_pos.x + PLAYER_SIZE * 2 / 3;
+    int top    = player_pos.y + PLAYER_SIZE * 1 / 3;
+    int bottom = player_pos.y + PLAYER_SIZE;
+    return (bullet->x + 10 > left) && (bullet->x - 10 < right) &&
+           (bullet->y + 10 > top)  && (bullet->y - 10 < bottom);
 }
 
 // 检测玩家一与玩家二子弹碰撞
@@ -683,6 +724,83 @@ void draw_player_hp_bar(int hp) {
     int text_x = hp_x + (hp_width - textwidth(hp_text)) / 2;
     int text_y = hp_y + (hp_height - textheight(hp_text)) / 2;
     outtextxy(text_x, text_y, hp_text);
+}
+
+// 为蓝色恶魔绘制血条（使用与 draw_demon_hp_bar 相同风格，但尺寸为 BLUE_DEMON_SIZE）
+void draw_blue_demon_hp_bar(BlueDemon* bd) {
+    if (bd == NULL) return;
+    int hp_x = bd->x;
+    int hp_y = bd->y - 12; // 稍微靠上显示
+    int hp_width = BLUE_DEMON_SIZE;
+    int hp_height = 6;
+
+    // 血条背景
+    setfillcolor(RGB(80, 80, 80));
+    setlinecolor(RGB(50, 50, 50));
+    fillrectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    rectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+
+    // 血条进度
+    float hp_ratio = (float)bd->hp / DEMON_MAX_HP;
+    int current_width = (int)(hp_width * hp_ratio);
+    if (current_width < 0) current_width = 0;
+
+    setfillcolor(RGB(255, 50, 50));
+    fillrectangle(hp_x + 1, hp_y + 1, hp_x + current_width - 1, hp_y + hp_height - 1);
+
+    // 血量文字
+    settextcolor(WHITE);
+    setbkmode(TRANSPARENT);
+    settextstyle(10, 0, _T("Consolas"));
+    TCHAR hp_text[16];
+    _stprintf(hp_text, _T("%d/%d"), bd->hp, DEMON_MAX_HP);
+    outtextxy(hp_x + (hp_width - textwidth(hp_text)) / 2, hp_y - 10, hp_text);
+}
+
+void draw_gray_demon_hp_bar(GrayDemon* gd) {
+    if (gd == NULL) return;
+    int hp_x = gd->x;
+    int hp_y = gd->y - 12;
+    int hp_width = BLUE_DEMON_SIZE;
+    int hp_height = 6;
+    setfillcolor(RGB(80, 80, 80));
+    setlinecolor(RGB(50, 50, 50));
+    fillrectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    rectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    float hp_ratio = (float)gd->hp / GRAY_DEMON_MAX_HP;
+    int current_width = (int)(hp_width * hp_ratio);
+    if (current_width < 0) current_width = 0;
+    setfillcolor(RGB(255, 50, 50));
+    fillrectangle(hp_x + 1, hp_y + 1, hp_x + current_width - 1, hp_y + hp_height - 1);
+    settextcolor(WHITE);
+    setbkmode(TRANSPARENT);
+    settextstyle(10, 0, _T("Consolas"));
+    TCHAR hp_text[16];
+    _stprintf(hp_text, _T("%d/%d"), gd->hp, GRAY_DEMON_MAX_HP);
+    outtextxy(hp_x + (hp_width - textwidth(hp_text)) / 2, hp_y - 10, hp_text);
+}
+
+void draw_black_demon_hp_bar(BlackDemon* kd) {
+    if (kd == NULL) return;
+    int hp_x = kd->x;
+    int hp_y = kd->y - 12;
+    int hp_width = BLUE_DEMON_SIZE;
+    int hp_height = 6;
+    setfillcolor(RGB(80, 80, 80));
+    setlinecolor(RGB(50, 50, 50));
+    fillrectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    rectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    float hp_ratio = (float)kd->hp / BLACK_DEMON_MAX_HP;
+    int current_width = (int)(hp_width * hp_ratio);
+    if (current_width < 0) current_width = 0;
+    setfillcolor(RGB(255, 50, 50));
+    fillrectangle(hp_x + 1, hp_y + 1, hp_x + current_width - 1, hp_y + hp_height - 1);
+    settextcolor(WHITE);
+    setbkmode(TRANSPARENT);
+    settextstyle(10, 0, _T("Consolas"));
+    TCHAR hp_text[16];
+    _stprintf(hp_text, _T("%d/%d"), kd->hp, BLACK_DEMON_MAX_HP);
+    outtextxy(hp_x + (hp_width - textwidth(hp_text)) / 2, hp_y - 10, hp_text);
 }
 
 void draw_player1_hp_bar(int hp) {
@@ -858,8 +976,7 @@ void draw_ufo_animation(GameState* state, GameResources* res) {
     for (int i = 0; i < state->ufo.size(); i++) {
         Ufo* ufo = &state->ufo[i];
 
-        // Use hp to determine alive/dead display to avoid mismatches between
-        // the saved `alive` flag and `hp` after loading.
+        // 使用 hp 作为显示生死的依据，避免加载后 `alive` 标志与 `hp` 不一致。
         if (ufo->hp <= 0) {
             // 死亡动画
             int frame_idx = ufo->death_frame / 5;
@@ -877,7 +994,10 @@ void draw_ufo_animation(GameState* state, GameResources* res) {
 // 绘制子弹
 void draw_bullets(GameState* state) {
     for (int i = 0; i < state->bullets.size(); i++) {
-        if (state->bullets[i].friendly) {
+        if (state->bullets[i].is_heal) {
+            setfillcolor(GREEN);
+        }
+        else if (state->bullets[i].friendly) {
             setfillcolor(YELLOW);
         }
         else {
@@ -916,7 +1036,7 @@ void draw_stop(GameState* state) {
     fillrectangle(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2 - 70, SCREEN_WIDTH / 2 + 100, SCREEN_HEIGHT / 2);
     outtextxy(SCREEN_WIDTH / 2 - 75, SCREEN_HEIGHT / 2 - 55, _T("Continue"));
     fillrectangle(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2 + 30, SCREEN_WIDTH / 2 + 100, SCREEN_HEIGHT / 2 + 100);
-    outtextxy(SCREEN_WIDTH / 2 - 85, SCREEN_HEIGHT / 2 + 45, _T("Quit Hall"));
+    outtextxy(SCREEN_WIDTH / 2 - 50, SCREEN_HEIGHT / 2 + 45, _T("Save"));
 }
 
 //绘制游戏结束界面
@@ -964,7 +1084,7 @@ void draw_ranking(GameState* state) {
     settextstyle(40, 0, _T("Consolas"));
     fillrectangle(SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 2 + 275, SCREEN_WIDTH / 2 + 300, SCREEN_HEIGHT / 2 - 250);
 
-    // 标题：Ranking List 居中
+    // 标题：排行榜居中
     settextcolor(WHITE);
     settextstyle(50, 0, _T("Consolas"));
     const TCHAR title[] = _T("Ranking List");
@@ -1589,13 +1709,21 @@ void handle_game_level(GameState* state, GameResources* res) {
     DWORD start_time_cost = 0;
     DWORD end_time_cost = 0;
 
-    // 初始化怪物
-    Demon demon1 = { SCREEN_WIDTH / 2, 4 * 50, DEMON_MAX_HP, 1, 0, 0, false };
-    Demon demon2 = { SCREEN_WIDTH / 2, 12 * 50, DEMON_MAX_HP, 1, 0, 0, false };
-    Demon demon3 = { SCREEN_WIDTH - 200, SCREEN_HEIGHT / 2 - 50, DEMON_MAX_HP, 1, 0, 0, false };
-    state->demons.push_back(demon1);
-    state->demons.push_back(demon2);
-    state->demons.push_back(demon3);
+    // 初始化怪物：仅保留最右侧的 demon
+    Demon demon = { SCREEN_WIDTH - 200, SCREEN_HEIGHT / 2 - 50, DEMON_MAX_HP, 1, 0, 0, false };
+    state->demons.push_back(demon);
+    // 初始化 blue demon（新怪物） — 体积更小、移动更快、初始冷却较短
+    BlueDemon bd = { 1000, SCREEN_HEIGHT / 2 - BLUE_DEMON_SIZE / 2, DEMON_MAX_HP, 60, 0, true };
+    state->blue_demons.clear();
+    state->blue_demons.push_back(bd);
+    // 初始化灰色守护者
+    GrayDemon gd = { 400, SCREEN_HEIGHT / 2 - BLUE_DEMON_SIZE / 2, GRAY_DEMON_MAX_HP, 0, true };
+    state->gray_demons.clear();
+    state->gray_demons.push_back(gd);
+    // 初始化黑色守护者
+    BlackDemon kd = { 700, SCREEN_HEIGHT / 2 - BLUE_DEMON_SIZE / 2, BLACK_DEMON_MAX_HP, 120, 0, true };
+    state->black_demons.clear();
+    state->black_demons.push_back(kd);
 
     // 保存初始地图到 state->wall_map
     for (int i = 0; i < 16; ++i) for (int j = 0; j < 26; ++j) state->wall_map[i][j] = map[i][j];
@@ -1647,6 +1775,8 @@ void handle_game_level(GameState* state, GameResources* res) {
                 else {
                     // 发射子弹
                     Bullet bullet;
+                    bullet.friendly = true;
+                    bullet.is_heal = false;
                     bullet.x = state->player_pos.x + PLAYER_SIZE / 2;
                     bullet.y = state->player_pos.y + PLAYER_SIZE * 2 / 3;
 
@@ -1749,7 +1879,161 @@ void handle_game_level(GameState* state, GameResources* res) {
             }
         }
 
-        // 子弹移动和碰撞
+        // BlueDemon 行为：保持距离并定时向玩家射击（每120帧约2秒）
+        for (int i = 0; i < state->blue_demons.size(); ++i) {
+            BlueDemon* b = &state->blue_demons[i];
+            if (b->hp <= 0) { b->alive = false; b->death_frame++; continue; }
+            // 保证活跃标记
+            b->alive = true;
+            // 保持距离
+            float dx = state->player_pos.x - b->x;
+            float dy = state->player_pos.y - b->y;
+            float dist = sqrt(dx*dx + dy*dy);
+            const float desired = 300.0f;
+            // 提高移动速度以表现更灵活的较小单位
+            const float speed = 4.0f;
+            if (dist > 1) {
+                if (dist < desired - 5.0f) {
+                    // 远离玩家
+                    b->x -= (int)(dx / dist * speed);
+                    b->y -= (int)(dy / dist * speed);
+                }
+                else if (dist > desired + 5.0f) {
+                    // 接近玩家
+                    b->x += (int)(dx / dist * speed);
+                    b->y += (int)(dy / dist * speed);
+                }
+            }
+
+            // 射击冷却（帧计数），缩短为 ~1s（60帧），并使用更大的移动速度
+            b->shoot_cd--;
+            if (b->shoot_cd <= 0) {
+                Bullet sb;
+                sb.friendly = false;
+                sb.is_heal = false;
+                sb.x = b->x + BLUE_DEMON_SIZE/2;
+                sb.y = b->y + BLUE_DEMON_SIZE/2;
+                float sdx = (state->player_pos.x + PLAYER_SIZE/2) - sb.x;
+                float sdy = (state->player_pos.y + PLAYER_SIZE/2) - sb.y;
+                float sdist = sqrt(sdx*sdx + sdy*sdy);
+                if (sdist <= 0) sdist = 1;
+                sb.dx = (sdx / sdist) * 8.0f; // 速度8
+                sb.dy = (sdy / sdist) * 8.0f;
+                state->bullets.push_back(sb);
+                // 重置冷却为 60 帧（约1秒），避免读档后立刻进入长冷却
+                b->shoot_cd = 60;
+            }
+        }
+
+        // 灰色守护者 AI
+        for (int i = 0; i < state->gray_demons.size(); ++i) {
+            GrayDemon* g = &state->gray_demons[i];
+            if (g->hp <= 0) { g->alive = false; g->death_frame++; continue; }
+            g->alive = true;
+            int target_x = 0, target_y = 0;
+            if (state->blue_demons.size() > 0 && state->blue_demons[0].hp > 0) {
+                target_x = (state->player_pos.x + state->blue_demons[0].x) / 2;
+                target_y = (state->player_pos.y + state->blue_demons[0].y) / 2;
+            } else {
+                target_x = state->player_pos.x;
+                target_y = state->player_pos.y;
+            }
+            float gdx = (float)(target_x - g->x);
+            float gdy = (float)(target_y - g->y);
+            float gdist = sqrt(gdx*gdx + gdy*gdy);
+            const float gspeed = 3.0f;
+            if (gdist > 1) {
+                g->x += (int)(gdx / gdist * gspeed);
+                g->y += (int)(gdy / gdist * gspeed);
+            }
+        }
+
+        // 黑色守护者 AI
+        for (int i = 0; i < state->black_demons.size(); ++i) {
+            BlackDemon* k = &state->black_demons[i];
+            if (k->hp <= 0) { k->alive = false; k->death_frame++; continue; }
+            k->alive = true;
+            // 远离玩家移动，不穿墙
+            float kdx = (float)(k->x - state->player_pos.x);
+            float kdy = (float)(k->y - state->player_pos.y);
+            float kdist = sqrt(kdx*kdx + kdy*kdy);
+            const float kdesired = 450.0f; // 300 * 1.5
+            const float kspeed = 2.0f;
+            if (kdist > 1 && kdist < kdesired - 5.0f) {
+                // 还没到目标距离，继续远离
+                int new_x = k->x + (int)(kdx / kdist * kspeed);
+                int new_y = k->y + (int)(kdy / kdist * kspeed);
+                // 检查四个角是否与墙碰撞
+                int cx1 = new_x + BLUE_DEMON_SIZE / 4;
+                int cy1 = new_y + BLUE_DEMON_SIZE * 2 / 3;
+                int cx2 = new_x + BLUE_DEMON_SIZE * 2 / 3;
+                int cy2 = new_y + BLUE_DEMON_SIZE;
+                bool blocked = false;
+                if (map[cy1/50][cx1/50]) blocked = true;
+                if (map[cy1/50][cx2/50]) blocked = true;
+                if (map[cy2/50][cx1/50]) blocked = true;
+                if (map[cy2/50][cx2/50]) blocked = true;
+                if (!blocked) { k->x = new_x; k->y = new_y; }
+            }
+            k->heal_cd--;
+            if (k->heal_cd <= 0) {
+                // 向所有敌对单位发射治疗弹
+                // 恶魔 demon
+                for (int j = 0; j < state->demons.size(); ++j) {
+                    Demon* d = &state->demons[j];
+                    if (d->hp <= 0 || d->hp >= DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false;
+                    hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (d->x + PLAYER_SIZE/2) - hb.x;
+                    float hdy = (d->y + PLAYER_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                // 蓝色守护者
+                for (int j = 0; j < state->blue_demons.size(); ++j) {
+                    BlueDemon* bd = &state->blue_demons[j];
+                    if (bd->hp <= 0 || bd->hp >= DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false;
+                    hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (bd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (bd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                // 灰色守护者
+                for (int j = 0; j < state->gray_demons.size(); ++j) {
+                    GrayDemon* gd = &state->gray_demons[j];
+                    if (gd->hp <= 0 || gd->hp >= GRAY_DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false;
+                    hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (gd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (gd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                k->heal_cd = 120; // 2秒
+            }
+        }
+
+        // 子弹移动和碰撞：只有 friendly==true 的子弹会对敌人造成伤害，enemy 子弹只会伤害玩家
         for (int i = state->bullets.size() - 1; i >= 0; i--) {
             Bullet* bullet = &state->bullets[i];
             bullet->x += bullet->dx;
@@ -1763,26 +2047,128 @@ void handle_game_level(GameState* state, GameResources* res) {
                 continue;
             }
 
-            // 子弹碰怪物
-            bool hit = false;
-            for (int j = 0; j < state->demons.size(); j++) {
-                Demon* demon = &state->demons[j];
-                if (demon->hp <= 0) continue;
-
-                if (check_bullet_demon_collision(bullet, demon)) {
-                    demon->hp--;
-                    hit = true;
-
-                    if (demon->hp <= 0) {
-                        demon->mood = 3;
-                        demon->death_frame = 0;
+            // 治疗弹碰撞
+            if (bullet->is_heal) {
+                bool healed = false;
+                for (int j = 0; j < state->demons.size(); j++) {
+                    Demon* demon = &state->demons[j];
+                    if (demon->hp <= 0 || demon->hp >= DEMON_MAX_HP) continue;
+                    if (check_bullet_demon_collision(bullet, demon)) {
+                        demon->hp++;
+                        if (demon->hp > DEMON_MAX_HP) demon->hp = DEMON_MAX_HP;
+                        healed = true;
+                        break;
                     }
-                    break;
                 }
+                if (!healed) {
+                    for (int j = 0; j < state->blue_demons.size(); ++j) {
+                        BlueDemon* bd = &state->blue_demons[j];
+                        if (bd->hp <= 0 || bd->hp >= DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > bd->x && bullet->x - 10 < bd->x + BLUE_DEMON_SIZE && bullet->y + 10 > bd->y && bullet->y - 10 < bd->y + BLUE_DEMON_SIZE) {
+                            bd->hp++;
+                            if (bd->hp > DEMON_MAX_HP) bd->hp = DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
+                if (!healed) {
+                    for (int j = 0; j < state->gray_demons.size(); ++j) {
+                        GrayDemon* gd = &state->gray_demons[j];
+                        if (gd->hp <= 0 || gd->hp >= GRAY_DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > gd->x && bullet->x - 10 < gd->x + BLUE_DEMON_SIZE && bullet->y + 10 > gd->y && bullet->y - 10 < gd->y + BLUE_DEMON_SIZE) {
+                            gd->hp++;
+                            if (gd->hp > GRAY_DEMON_MAX_HP) gd->hp = GRAY_DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
+                if (healed) {
+                    state->bullets.erase(state->bullets.begin() + i);
+                    continue;
+                }
+                // 治疗弹不进入友敌伤害判断
+                continue;
             }
 
-            if (hit) {
-                state->bullets.erase(state->bullets.begin() + i);
+            if (bullet->friendly) {
+                // 玩家子弹：检测是否命中任何敌人（demon / blue_demon / ufo）
+                bool hit = false;
+                for (int j = 0; j < state->demons.size(); j++) {
+                    Demon* demon = &state->demons[j];
+                    if (demon->hp <= 0) continue;
+                    if (check_bullet_demon_collision(bullet, demon)) {
+                        demon->hp--;
+                        hit = true;
+                        if (demon->hp <= 0) { demon->mood = 3; demon->death_frame = 0; }
+                        break;
+                    }
+                }
+
+                if (!hit) {
+                    for (int j = 0; j < state->blue_demons.size(); ++j) {
+                        BlueDemon* bd = &state->blue_demons[j];
+                        if (bd->hp <= 0) continue;
+                        if (bullet->x + 10 > bd->x && bullet->x - 10 < bd->x + BLUE_DEMON_SIZE && bullet->y + 10 > bd->y && bullet->y - 10 < bd->y + BLUE_DEMON_SIZE) {
+                            bd->hp--;
+                            hit = true;
+                            if (bd->hp <= 0) { bd->alive = false; bd->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+
+                if (!hit) {
+                    for (int j = 0; j < state->black_demons.size(); ++j) {
+                        BlackDemon* kd = &state->black_demons[j];
+                        if (kd->hp <= 0) continue;
+                        if (bullet->x + 10 > kd->x && bullet->x - 10 < kd->x + BLUE_DEMON_SIZE && bullet->y + 10 > kd->y && bullet->y - 10 < kd->y + BLUE_DEMON_SIZE) {
+                            kd->hp--;
+                            hit = true;
+                            if (kd->hp <= 0) { kd->alive = false; kd->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+
+                if (!hit) {
+                    for (int j = 0; j < state->gray_demons.size(); ++j) {
+                        GrayDemon* gd = &state->gray_demons[j];
+                        if (gd->hp <= 0) continue;
+                        if (bullet->x + 10 > gd->x && bullet->x - 10 < gd->x + BLUE_DEMON_SIZE && bullet->y + 10 > gd->y && bullet->y - 10 < gd->y + BLUE_DEMON_SIZE) {
+                            gd->hp--;
+                            hit = true;
+                            if (gd->hp <= 0) { gd->alive = false; gd->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+
+                if (!hit) {
+                    for (int j = 0; j < state->ufo.size(); ++j) {
+                        Ufo* u = &state->ufo[j];
+                        if (u->hp <= 0) continue;
+                        if (check_bullet_ufo_collision(bullet, u)) {
+                            u->hp--;
+                            hit = true;
+                            if (u->hp <= 0) { u->alive = false; u->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+
+                if (hit) {
+                    state->bullets.erase(state->bullets.begin() + i);
+                }
+            }
+            else {
+                // 敌方子弹：只会伤害玩家
+                if (check_player_bullet_collision(state->player_pos, bullet)) {
+                    state->player_hp--;
+                    if (state->player_hp < 0) state->player_hp = 0;
+                    state->bullets.erase(state->bullets.begin() + i);
+                }
             }
         }
 
@@ -1806,6 +2192,35 @@ void handle_game_level(GameState* state, GameResources* res) {
         draw_game_background(state->player_pos, 0, map, res);
         draw_demon_animation(state, res);
         draw_bullets(state);
+
+        // 绘制 blue_demons（蓝色守护者）
+        for (int i = 0; i < state->blue_demons.size(); ++i) {
+            BlueDemon* bd = &state->blue_demons[i];
+            if (bd->hp <= 0) continue;
+            // 使用简单的蓝色圆圈表示（较玩家更小）
+            setfillcolor(RGB(50, 120, 255));
+            fillcircle(bd->x + BLUE_DEMON_SIZE/2, bd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            // 绘制血条（复用风格）
+            draw_blue_demon_hp_bar(bd);
+        }
+
+        // 灰色守护者
+        for (int i = 0; i < state->gray_demons.size(); ++i) {
+            GrayDemon* gd = &state->gray_demons[i];
+            if (gd->hp <= 0) continue;
+            setfillcolor(RGB(160, 160, 160));
+            fillcircle(gd->x + BLUE_DEMON_SIZE/2, gd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_gray_demon_hp_bar(gd);
+        }
+
+        // 黑色守护者
+        for (int i = 0; i < state->black_demons.size(); ++i) {
+            BlackDemon* kd = &state->black_demons[i];
+            if (kd->hp <= 0) continue;
+            setfillcolor(RGB(40, 40, 40));
+            fillcircle(kd->x + BLUE_DEMON_SIZE/2, kd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_black_demon_hp_bar(kd);
+        }
         setcolor(WHITE);//暂停键
         setfillcolor(BLACK);
         fillrectangle(SCREEN_WIDTH - 60, 10, SCREEN_WIDTH - 10, 60);
@@ -1903,35 +2318,21 @@ void handle_new_or_old(GameState* state, GameResources* res) {
 
 void handle_stop(GameState* state) {
     ExMessage msg;
-    // 增加“保存并退出”按钮支持
     draw_stop(state);
-    // 在暂停界面增加第三个按钮（保存并退出）
-    setfillcolor(RGB(100, 100, 100));
-    fillrectangle(SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2 + 110, SCREEN_WIDTH / 2 + 100, SCREEN_HEIGHT / 2 + 170);
-    settextcolor(WHITE);
-    settextstyle(24, 0, _T("Consolas"));
-    outtextxy(SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 + 120, _T("Save && Quit"));
     FlushBatchDraw();
 
     while (1) {
         while (peekmessage(&msg, EX_MOUSE, true)) {
-            if (msg.message == WM_LBUTTONDOWN) {
-                // Continue
+                if (msg.message == WM_LBUTTONDOWN) {
+                // 继续
                 if (msg.x >= SCREEN_WIDTH / 2 - 100 && msg.x <= SCREEN_WIDTH / 2 + 100
                     && msg.y >= SCREEN_HEIGHT / 2 - 70 && msg.y <= SCREEN_HEIGHT / 2) {
                     state->quit_hall = false;
                     return;
                 }
-                // Quit without saving
+                // 保存并退出
                 else if (msg.x >= SCREEN_WIDTH / 2 - 100 && msg.x <= SCREEN_WIDTH / 2 + 100
                     && msg.y >= SCREEN_HEIGHT / 2 + 30 && msg.y <= SCREEN_HEIGHT / 2 + 100) {
-                    state->quit_hall = true;
-                    return;
-                }
-                // Save and Quit
-                else if (msg.x >= SCREEN_WIDTH / 2 - 100 && msg.x <= SCREEN_WIDTH / 2 + 100
-                    && msg.y >= SCREEN_HEIGHT / 2 + 110 && msg.y <= SCREEN_HEIGHT / 2 + 170) {
-                    // 保存当前游戏到文件（按当前登录玩家）
                     if (state->current_player != NULL) {
                         save_singleplayer_game(state);
                     }
@@ -1965,7 +2366,28 @@ void save_singleplayer_game(GameState* state) {
         fprintf(fp, "%d %d %d %d %d %d %d\n", d->x, d->y, d->hp, d->mood, d->attack_frame, d->death_frame, d->is_attacking ? 1 : 0);
     }
 
-    // 保存ufo
+    // 保存 blue_demons（新增怪物）
+    fprintf(fp, "%d\n", (int)state->blue_demons.size());
+    for (size_t i = 0; i < state->blue_demons.size(); ++i) {
+        BlueDemon* b = &state->blue_demons[i];
+        fprintf(fp, "%d %d %d %d %d %d\n", b->x, b->y, b->hp, b->alive ? 1 : 0, b->shoot_cd, b->death_frame);
+    }
+
+    // 保存 gray_demons（灰色守护者）
+    fprintf(fp, "%d\n", (int)state->gray_demons.size());
+    for (size_t i = 0; i < state->gray_demons.size(); ++i) {
+        GrayDemon* g = &state->gray_demons[i];
+        fprintf(fp, "%d %d %d %d %d\n", g->x, g->y, g->hp, g->alive ? 1 : 0, g->death_frame);
+    }
+
+    // 保存 black_demons（黑色守护者）
+    fprintf(fp, "%d\n", (int)state->black_demons.size());
+    for (size_t i = 0; i < state->black_demons.size(); ++i) {
+        BlackDemon* k = &state->black_demons[i];
+        fprintf(fp, "%d %d %d %d %d %d\n", k->x, k->y, k->hp, k->alive ? 1 : 0, k->heal_cd, k->death_frame);
+    }
+
+    // 保存ufo保存ufo保存ufo
     fprintf(fp, "%d\n", (int)state->ufo.size());
     for (size_t i = 0; i < state->ufo.size(); ++i) {
         Ufo* u = &state->ufo[i];
@@ -1984,7 +2406,7 @@ void save_singleplayer_game(GameState* state) {
 }
 
 // 从以玩家名为名的文件读取并恢复单人游戏状态
-// helper: parse saved data (common for both levels)
+// 辅助：解析保存的数据（适用于所有关卡）
 static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
     if (state == NULL || fp == NULL) return false;
 
@@ -1993,7 +2415,7 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
     fscanf(fp, "%d %d %d %d %d", &state->player_hp, &state->player_direction, &can_wall_int, &state->time_cost, &state->wall_num);
     state->can_wall = can_wall_int ? true : false;
 
-    // load demons
+    // 加载 demons
     int demons_count = 0;
     fscanf(fp, "%d", &demons_count);
     state->demons.clear();
@@ -2005,7 +2427,53 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
         state->demons.push_back(d);
     }
 
-    // load ufo
+    // 加载 blue_demons（新增怪物）
+    int blue_count = 0;
+    fscanf(fp, "%d", &blue_count);
+    state->blue_demons.clear();
+    for (int i = 0; i < blue_count; ++i) {
+        BlueDemon b = {0};
+        int alive_int = 1;
+        fscanf(fp, "%d %d %d %d %d %d", &b.x, &b.y, &b.hp, &alive_int, &b.shoot_cd, &b.death_frame);
+        b.alive = alive_int ? true : false;
+        // 只添加存活的恶魔
+        if (b.alive && b.hp > 0) {
+            // 如果存档中的冷却时间为 0 或负，预设为即将能够发射，避免一开始就被射体
+            if (b.shoot_cd <= 0 || b.shoot_cd > 100000) b.shoot_cd = 60;
+            state->blue_demons.push_back(b);
+        }
+    }
+
+    // 加载 gray_demons（灰色守护者）
+    int gray_count = 0;
+    fscanf(fp, "%d", &gray_count);
+    state->gray_demons.clear();
+    for (int i = 0; i < gray_count; ++i) {
+        GrayDemon g = {0};
+        int alive_int = 1;
+        fscanf(fp, "%d %d %d %d %d", &g.x, &g.y, &g.hp, &alive_int, &g.death_frame);
+        g.alive = alive_int ? true : false;
+        if (g.alive && g.hp > 0) {
+            state->gray_demons.push_back(g);
+        }
+    }
+
+    // 加载 black_demons（黑色守护者）
+    int black_count = 0;
+    fscanf(fp, "%d", &black_count);
+    state->black_demons.clear();
+    for (int i = 0; i < black_count; ++i) {
+        BlackDemon k = {0};
+        int alive_int = 1;
+        fscanf(fp, "%d %d %d %d %d %d", &k.x, &k.y, &k.hp, &alive_int, &k.heal_cd, &k.death_frame);
+        k.alive = alive_int ? true : false;
+        if (k.alive && k.hp > 0) {
+            if (k.heal_cd <= 0 || k.heal_cd > 100000) k.heal_cd = 60;
+            state->black_demons.push_back(k);
+        }
+    }
+
+    // 加载 ufo加载 ufo加载 ufo
     int ufo_count = 0;
     fscanf(fp, "%d", &ufo_count);
     state->ufo.clear();
@@ -2013,8 +2481,8 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
         Ufo u = {0};
         int alive_int = 1;
         fscanf(fp, "%d %d %d %d %d %d", &u.x, &u.y, &u.hp, &alive_int, &u.attack_frame, &u.death_frame);
-        // Normalize alive flag based on hp to avoid inconsistent saved state
-        // If hp>0 we consider the ufo alive; otherwise dead.
+        // 根据 hp 规范 alive 标志，避免保存状态不一致
+        // 如果 hp>0 则视为存活，否则视为死亡。
         u.alive = (u.hp > 0) ? true : false;
         if (u.alive) {
             // reset death_frame if still alive
@@ -2025,7 +2493,7 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
         state->ufo.push_back(u);
     }
 
-    // load wall_map (16x26)
+    // 载入墙体地图（16x26）
     for (int i = 0; i < 16; ++i) {
         for (int j = 0; j < 26; ++j) {
             int v = 0;
@@ -2039,14 +2507,14 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
     return true;
 }
 
-// load helpers for level-specific handling
+// 关卡特定的加载辅助函数
 bool load_singleplayer_game_level1(GameState* state, FILE* fp) {
-    // level1 currently uses the common parser
+    // 关卡1 目前使用通用解析器
     return parse_saved_state_from_file(state, fp);
 }
 
 bool load_singleplayer_game_level2(GameState* state, FILE* fp) {
-    // level2 currently uses the same layout; keep separate for future differences
+    // 关卡2 目前使用相同布局；保留单独函数以便未来扩展
     return parse_saved_state_from_file(state, fp);
 }
 
@@ -2130,7 +2598,7 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
         }
     }
 
-    // (debug dump removed)
+    // （调试输出已移除）
 
     // 时间跟踪基线（继续时保留已有的 time_cost）
     DWORD delta_time_cost = state->time_cost*1000;
@@ -2201,6 +2669,8 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                 else {
                     // 发射子弹（点击方向）
                     Bullet bullet;
+                    bullet.friendly = true;
+                    bullet.is_heal = false;
                     bullet.x = state->player_pos.x + PLAYER_SIZE / 2;
                     bullet.y = state->player_pos.y + PLAYER_SIZE * 2 / 3;
                     float dx = msg.x - bullet.x;
@@ -2264,7 +2734,7 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
         }
 
 
-        // ---- 先让 demon 移动并攻击，再处理子弹碰撞（确保读档后怪物行为正常） ----
+        // ---- 先让恶魔移动并攻击，再处理子弹碰撞（确保读档后怪物行为正常） ----
         for (int i = 0; i < state->demons.size(); i++) {
             Demon* demon = &state->demons[i];
 
@@ -2310,15 +2780,154 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
             }
         }
 
+        // 如果存在 blue_demons（存档恢复时可能已有），也执行行为更新（保持距离并定时射击）
+        for (int i = 0; i < state->blue_demons.size(); ++i) {
+            BlueDemon* b = &state->blue_demons[i];
+            if (b->hp <= 0) { b->alive = false; b->death_frame++; continue; }
+            b->alive = true;
+            float dx = state->player_pos.x - b->x;
+            float dy = state->player_pos.y - b->y;
+            float dist = sqrt(dx*dx + dy*dy);
+            const float desired = 300.0f;
+            const float speed = 2.0f;
+            if (dist > 1) {
+                if (dist < desired - 5.0f) {
+                    b->x -= (int)(dx / dist * speed);
+                    b->y -= (int)(dy / dist * speed);
+                }
+                else if (dist > desired + 5.0f) {
+                    b->x += (int)(dx / dist * speed);
+                    b->y += (int)(dy / dist * speed);
+                }
+            }
+            b->shoot_cd--;
+            if (b->shoot_cd <= 0) {
+                Bullet sb;
+                sb.friendly = false;
+                sb.is_heal = false;
+                sb.x = b->x + PLAYER_SIZE/2;
+                sb.y = b->y + PLAYER_SIZE/2;
+                float sdx = (state->player_pos.x + PLAYER_SIZE/2) - sb.x;
+                float sdy = (state->player_pos.y + PLAYER_SIZE/2) - sb.y;
+                float sdist = sqrt(sdx*sdx + sdy*sdy);
+                if (sdist <= 0) sdist = 1;
+                sb.dx = (sdx / sdist) * 8.0f;
+                sb.dy = (sdy / sdist) * 8.0f;
+                state->bullets.push_back(sb);
+                b->shoot_cd = 120;
+            }
+        }
+
+        // 灰色守护者 AI
+        for (int i = 0; i < state->gray_demons.size(); ++i) {
+            GrayDemon* g = &state->gray_demons[i];
+            if (g->hp <= 0) { g->alive = false; g->death_frame++; continue; }
+            g->alive = true;
+            int target_x = 0, target_y = 0;
+            if (state->blue_demons.size() > 0 && state->blue_demons[0].hp > 0) {
+                target_x = (state->player_pos.x + state->blue_demons[0].x) / 2;
+                target_y = (state->player_pos.y + state->blue_demons[0].y) / 2;
+            } else {
+                target_x = state->player_pos.x;
+                target_y = state->player_pos.y;
+            }
+            float gdx = (float)(target_x - g->x);
+            float gdy = (float)(target_y - g->y);
+            float gdist = sqrt(gdx*gdx + gdy*gdy);
+            const float gspeed = 3.0f;
+            if (gdist > 1) {
+                g->x += (int)(gdx / gdist * gspeed);
+                g->y += (int)(gdy / gdist * gspeed);
+            }
+        }
+
+        // 黑色守护者 AI
+        for (int i = 0; i < state->black_demons.size(); ++i) {
+            BlackDemon* k = &state->black_demons[i];
+            if (k->hp <= 0) { k->alive = false; k->death_frame++; continue; }
+            k->alive = true;
+            // 远离玩家移动，不穿墙
+            float kdx = (float)(k->x - state->player_pos.x);
+            float kdy = (float)(k->y - state->player_pos.y);
+            float kdist = sqrt(kdx*kdx + kdy*kdy);
+            const float kdesired = 450.0f; // 300 * 1.5
+            const float kspeed = 2.0f;
+            if (kdist > 1 && kdist < kdesired - 5.0f) {
+                // 还没到目标距离，继续远离
+                int new_x = k->x + (int)(kdx / kdist * kspeed);
+                int new_y = k->y + (int)(kdy / kdist * kspeed);
+                // 检查四个角是否与墙碰撞
+                int cx1 = new_x + BLUE_DEMON_SIZE / 4;
+                int cy1 = new_y + BLUE_DEMON_SIZE * 2 / 3;
+                int cx2 = new_x + BLUE_DEMON_SIZE * 2 / 3;
+                int cy2 = new_y + BLUE_DEMON_SIZE;
+                bool blocked = false;
+                if (map[cy1/50][cx1/50]) blocked = true;
+                if (map[cy1/50][cx2/50]) blocked = true;
+                if (map[cy2/50][cx1/50]) blocked = true;
+                if (map[cy2/50][cx2/50]) blocked = true;
+                if (!blocked) { k->x = new_x; k->y = new_y; }
+            }
+            k->heal_cd--;
+            if (k->heal_cd <= 0) {
+                for (int j = 0; j < state->demons.size(); ++j) {
+                    Demon* d = &state->demons[j];
+                    if (d->hp <= 0 || d->hp >= DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false; hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (d->x + PLAYER_SIZE/2) - hb.x;
+                    float hdy = (d->y + PLAYER_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                for (int j = 0; j < state->blue_demons.size(); ++j) {
+                    BlueDemon* bd = &state->blue_demons[j];
+                    if (bd->hp <= 0 || bd->hp >= DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false; hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (bd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (bd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                for (int j = 0; j < state->gray_demons.size(); ++j) {
+                    GrayDemon* gd = &state->gray_demons[j];
+                    if (gd->hp <= 0 || gd->hp >= GRAY_DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false; hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (gd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (gd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
+                k->heal_cd = 120;
+            }
+        }
+
         for (int i = 0; i < state->ufo.size(); i++) {
             Ufo* ufo = &state->ufo[i];
 
-        // Use hp as source of truth for firing behavior; saved `alive` flag
-        // may be inconsistent. If hp>0 the ufo should act alive.
+        // 使用 hp 作为发射行为的依据；保存的 `alive` 标志可能不一致。若 hp>0 则 ufo 应当处于活跃状态。
         if (ufo->hp > 0) {
                 // 发射子弹
                 Bullet bullet;
                 bullet.friendly = false;
+                bullet.is_heal = false;
                 bullet.x = ufo->x + PLAYER_SIZE / 2;
                 bullet.y = ufo->y + PLAYER_SIZE / 2;
 
@@ -2356,6 +2965,50 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                 continue;
             }
 
+            // 治疗弹碰撞
+            if (bullet->is_heal) {
+                bool healed = false;
+                for (int j = 0; j < state->demons.size(); j++) {
+                    Demon* demon = &state->demons[j];
+                    if (demon->hp <= 0 || demon->hp >= DEMON_MAX_HP) continue;
+                    if (check_bullet_demon_collision(bullet, demon)) {
+                        demon->hp++;
+                        if (demon->hp > DEMON_MAX_HP) demon->hp = DEMON_MAX_HP;
+                        healed = true;
+                        break;
+                    }
+                }
+                if (!healed) {
+                    for (int j = 0; j < state->blue_demons.size(); ++j) {
+                        BlueDemon* bd = &state->blue_demons[j];
+                        if (bd->hp <= 0 || bd->hp >= DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > bd->x && bullet->x - 10 < bd->x + BLUE_DEMON_SIZE && bullet->y + 10 > bd->y && bullet->y - 10 < bd->y + BLUE_DEMON_SIZE) {
+                            bd->hp++;
+                            if (bd->hp > DEMON_MAX_HP) bd->hp = DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
+                if (!healed) {
+                    for (int j = 0; j < state->gray_demons.size(); ++j) {
+                        GrayDemon* gd = &state->gray_demons[j];
+                        if (gd->hp <= 0 || gd->hp >= GRAY_DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > gd->x && bullet->x - 10 < gd->x + BLUE_DEMON_SIZE && bullet->y + 10 > gd->y && bullet->y - 10 < gd->y + BLUE_DEMON_SIZE) {
+                            gd->hp++;
+                            if (gd->hp > GRAY_DEMON_MAX_HP) gd->hp = GRAY_DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
+                if (healed) {
+                    state->bullets.erase(state->bullets.begin() + i);
+                    continue;
+                }
+                continue;
+            }
+
             if (bullet->friendly) {
                 // 子弹碰 demon
                 bool hit = false;
@@ -2373,6 +3026,44 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                     }
                 }
                 if (hit) { state->bullets.erase(state->bullets.begin() + i); continue; }
+                // 子弹碰 blue_demon
+                if (!hit) {
+                    for (int j = 0; j < state->blue_demons.size(); ++j) {
+                        BlueDemon* bd = &state->blue_demons[j];
+                        if (bd->hp <= 0) continue;
+                        if (bullet->x + 10 > bd->x && bullet->x - 10 < bd->x + PLAYER_SIZE && bullet->y + 10 > bd->y && bullet->y - 10 < bd->y + PLAYER_SIZE) {
+                            bd->hp--;
+                            hit = true;
+                            if (bd->hp <= 0) { bd->alive = false; bd->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+                if (hit) { state->bullets.erase(state->bullets.begin() + i); continue; }
+
+                // 黑色守护者碰撞
+                for (int j = 0; j < state->black_demons.size(); ++j) {
+                    BlackDemon* kd = &state->black_demons[j];
+                    if (kd->hp <= 0) continue;
+                    if (bullet->x + 10 > kd->x && bullet->x - 10 < kd->x + BLUE_DEMON_SIZE && bullet->y + 10 > kd->y && bullet->y - 10 < kd->y + BLUE_DEMON_SIZE) {
+                        kd->hp--;
+                        if (kd->hp <= 0) { kd->alive = false; kd->death_frame = 0; }
+                        state->bullets.erase(state->bullets.begin() + i);
+                        break;
+                    }
+                }
+
+                // 灰色守护者碰撞
+                for (int j = 0; j < state->gray_demons.size(); ++j) {
+                    GrayDemon* gd = &state->gray_demons[j];
+                    if (gd->hp <= 0) continue;
+                    if (bullet->x + 10 > gd->x && bullet->x - 10 < gd->x + BLUE_DEMON_SIZE && bullet->y + 10 > gd->y && bullet->y - 10 < gd->y + BLUE_DEMON_SIZE) {
+                        gd->hp--;
+                        if (gd->hp <= 0) { gd->alive = false; gd->death_frame = 0; }
+                        state->bullets.erase(state->bullets.begin() + i);
+                        break;
+                    }
+                }
 
                 // 子弹碰 ufo
                 for (int j = 0; j < state->ufo.size(); j++) {
@@ -2408,12 +3099,39 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
         draw_game_background(state->player_pos, 0, map, res);
         draw_demon_animation(state, res);
         draw_ufo_animation(state, res);
-        // Level2: draw Link NPC and show prompt when nearby
+        // 关卡2：绘制林克 NPC，并在玩家接近时显示提示
         if (state->bg_mode == 2) {
-            // draw link sprite at same position as in fresh level2
+            // 在与新游戏第二关相同的位置绘制林克精灵
             putimage_alpha(19 * 50, 7 * 50, &res->link[state->link_frame]);
         }
         draw_bullets(state);
+
+        // 蓝色守护者
+        for (int i = 0; i < state->blue_demons.size(); ++i) {
+            BlueDemon* bd = &state->blue_demons[i];
+            if (bd->hp <= 0) continue;
+            setfillcolor(RGB(50, 120, 255));
+            fillcircle(bd->x + BLUE_DEMON_SIZE/2, bd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_blue_demon_hp_bar(bd);
+        }
+
+        // 灰色守护者
+        for (int i = 0; i < state->gray_demons.size(); ++i) {
+            GrayDemon* gd = &state->gray_demons[i];
+            if (gd->hp <= 0) continue;
+            setfillcolor(RGB(160, 160, 160));
+            fillcircle(gd->x + BLUE_DEMON_SIZE/2, gd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_gray_demon_hp_bar(gd);
+        }
+
+        // 黑色守护者
+        for (int i = 0; i < state->black_demons.size(); ++i) {
+            BlackDemon* kd = &state->black_demons[i];
+            if (kd->hp <= 0) continue;
+            setfillcolor(RGB(40, 40, 40));
+            fillcircle(kd->x + BLUE_DEMON_SIZE/2, kd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_black_demon_hp_bar(kd);
+        }
 
         // 暂停键
         setcolor(WHITE); setfillcolor(BLACK);
@@ -2430,7 +3148,7 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
             }
         }
 
-        // Level2: show prompt to save Link when player is at link position
+        // 关卡2：玩家在林克位置时显示保存林克的提示
         if (state->bg_mode == 2) {
             bool link_pos = (state->player_pos.x + PLAYER_SIZE / 2 >= 18 * 50 &&
                 state->player_pos.x + PLAYER_SIZE / 2 <= 19 * 50 &&
@@ -2449,7 +3167,7 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
             if (state->quit_hall) { EndBatchDraw(); return; }
         }
 
-        // (safety window removed)
+        // （安全窗已移除）
 
         // 所有怪物死亡
         if (state->demons.empty()) {
@@ -2607,6 +3325,7 @@ void handle_game_level2(GameState* state, GameResources* res) {
                     
                         Bullet bullet;
                         bullet.friendly = true;
+                        bullet.is_heal = false;
                         bullet.x = state->player_pos.x + PLAYER_SIZE / 2;
                         bullet.y = state->player_pos.y + PLAYER_SIZE * 2 / 3;
 
@@ -2673,6 +3392,7 @@ void handle_game_level2(GameState* state, GameResources* res) {
                 // 发射子弹
                 Bullet bullet;
                 bullet.friendly = false;
+                bullet.is_heal = false;
                 bullet.x = ufo->x + PLAYER_SIZE / 2;
                 bullet.y = ufo->y + PLAYER_SIZE / 2;
 
@@ -2885,6 +3605,7 @@ void handle_pvp(GameState* state, GameResources* res) {
                     // 玩家一发射子弹：水平向右，速度10
                     Bullet bullet;
                     bullet.friendly = true; // 标记为玩家一子弹
+                    bullet.is_heal = false;
                     bullet.x = player1.player_pos.x + PLAYER_SIZE / 2;
                     bullet.y = player1.player_pos.y + PLAYER_SIZE * 2 / 3;
                     bullet.dx = 10; // 水平向右
@@ -2901,6 +3622,7 @@ void handle_pvp(GameState* state, GameResources* res) {
                     // 玩家二发射子弹：水平向左，速度10
                     Bullet bullet;
                     bullet.friendly = false; // 标记为玩家二子弹（与玩家一区分）
+                    bullet.is_heal = false;
                     bullet.x = player2.player_pos.x + PLAYER_SIZE / 2;
                     bullet.y = player2.player_pos.y + PLAYER_SIZE * 2 / 3;
                     bullet.dx = -10; // 水平向左
