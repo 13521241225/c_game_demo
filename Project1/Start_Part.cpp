@@ -23,6 +23,7 @@
 #define BLUE_DEMON_SIZE 60
 #define GRAY_DEMON_MAX_HP 20
 #define BLACK_DEMON_MAX_HP 5
+#define PURPLE_DEMON_MAX_HP 5
 
 //结构体定义
 
@@ -69,6 +70,17 @@ typedef struct BlackDemon {
     int death_frame;
     bool alive;
 } BlackDemon;
+
+// 紫色守护者
+typedef struct PurpleDemon {
+    int x, y;
+    int hp;
+    int charge_cd;
+    bool charging;
+    float charge_dx, charge_dy;
+    int death_frame;
+    bool alive;
+} PurpleDemon;
 
 // 怪物ufo状态结构体
 typedef struct Ufo {
@@ -149,6 +161,9 @@ typedef struct GameState {
 
     // 游戏逻辑标记
     bool can_wall;
+    bool skill_orb_active;
+    POINT skill_orb_pos;
+    bool skill_orb_pickup;
     bool if_new;
     bool have_game;
     bool login_success;
@@ -164,6 +179,7 @@ typedef struct GameState {
     std::vector<BlueDemon> blue_demons;
     std::vector<GrayDemon> gray_demons;
     std::vector<BlackDemon> black_demons;
+    std::vector<PurpleDemon> purple_demons;
     std::vector<Ufo> ufo;
     int wall_map[16][26];
 } GameState;
@@ -207,6 +223,7 @@ void draw_demon_hp_bar(Demon* demon);
 void draw_blue_demon_hp_bar(BlueDemon* bd);
 void draw_gray_demon_hp_bar(GrayDemon* gd);
 void draw_black_demon_hp_bar(BlackDemon* kd);
+void draw_purple_demon_hp_bar(PurpleDemon* pd);
 void draw_player_animation(GameState* state, GameResources* res);
 void draw_demon_animation(GameState* state, GameResources* res);
 void draw_bullets(GameState* state);
@@ -800,6 +817,29 @@ void draw_black_demon_hp_bar(BlackDemon* kd) {
     settextstyle(10, 0, _T("Consolas"));
     TCHAR hp_text[16];
     _stprintf(hp_text, _T("%d/%d"), kd->hp, BLACK_DEMON_MAX_HP);
+    outtextxy(hp_x + (hp_width - textwidth(hp_text)) / 2, hp_y - 10, hp_text);
+}
+
+void draw_purple_demon_hp_bar(PurpleDemon* pd) {
+    if (pd == NULL) return;
+    int hp_x = pd->x;
+    int hp_y = pd->y - 12;
+    int hp_width = BLUE_DEMON_SIZE;
+    int hp_height = 6;
+    setfillcolor(RGB(80, 80, 80));
+    setlinecolor(RGB(50, 50, 50));
+    fillrectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    rectangle(hp_x, hp_y, hp_x + hp_width, hp_y + hp_height);
+    float hp_ratio = (float)pd->hp / PURPLE_DEMON_MAX_HP;
+    int current_width = (int)(hp_width * hp_ratio);
+    if (current_width < 0) current_width = 0;
+    setfillcolor(RGB(255, 50, 50));
+    fillrectangle(hp_x + 1, hp_y + 1, hp_x + current_width - 1, hp_y + hp_height - 1);
+    settextcolor(WHITE);
+    setbkmode(TRANSPARENT);
+    settextstyle(10, 0, _T("Consolas"));
+    TCHAR hp_text[16];
+    _stprintf(hp_text, _T("%d/%d"), pd->hp, PURPLE_DEMON_MAX_HP);
     outtextxy(hp_x + (hp_width - textwidth(hp_text)) / 2, hp_y - 10, hp_text);
 }
 
@@ -1701,6 +1741,9 @@ void handle_game_level(GameState* state, GameResources* res) {
     state->bullets.clear();
     state->demons.clear();
     state->can_wall = false;
+    state->skill_orb_active = false;
+    state->skill_orb_pos = {0, 0};
+    state->skill_orb_pickup = false;
     state->game_win = false;
     state->time_cost = 0;
     state->wall_num = 0;
@@ -1724,6 +1767,10 @@ void handle_game_level(GameState* state, GameResources* res) {
     BlackDemon kd = { 700, SCREEN_HEIGHT / 2 - BLUE_DEMON_SIZE / 2, BLACK_DEMON_MAX_HP, 120, 0, true };
     state->black_demons.clear();
     state->black_demons.push_back(kd);
+    // 初始化紫色守护者
+    PurpleDemon pd = { 600, 400, PURPLE_DEMON_MAX_HP, 180, false, 0, 0, 0, true };
+    state->purple_demons.clear();
+    state->purple_demons.push_back(pd);
 
     // 保存初始地图到 state->wall_map
     for (int i = 0; i < 16; ++i) for (int j = 0; j < 26; ++j) state->wall_map[i][j] = map[i][j];
@@ -1749,6 +1796,13 @@ void handle_game_level(GameState* state, GameResources* res) {
                     if (state->quit_hall) {
                         EndBatchDraw();
                         return;
+                    }
+                    if (state->skill_orb_active) {
+                        int fdx = state->player_pos.x - state->skill_orb_pos.x;
+                        int fdy = state->player_pos.y - state->skill_orb_pos.y;
+                        if (abs(fdx) < 80 && abs(fdy) < 80) {
+                            state->skill_orb_pickup = true;
+                        }
                     }
                     break;
                 }
@@ -1796,6 +1850,19 @@ void handle_game_level(GameState* state, GameResources* res) {
                 state->wall_map[msg.y / 50][msg.x / 50] = 1;
                 state->wall_num++;
             }
+        }
+
+        if (state->skill_orb_pickup) {
+            state->skill_orb_pickup = false;
+            state->skill_orb_active = false;
+            cleardevice();
+            putimage(0, 0, &res->bg_player_talk);
+            settextstyle(50, 0, _T("Consolas"));
+            setcolor(BLACK);
+            outtextxy(50, SCREEN_HEIGHT - 220, _T("I feel like I've mastered something new"));
+            FlushBatchDraw();
+            Sleep(3000);
+            state->can_wall = true;
         }
 
         // 玩家移动
@@ -1975,6 +2042,10 @@ void handle_game_level(GameState* state, GameResources* res) {
                 if (map[cy2/50][cx2/50]) blocked = true;
                 if (!blocked) { k->x = new_x; k->y = new_y; }
             }
+            if (k->x < 2*50) k->x = 2*50;
+            if (k->x > 23*50 - BLUE_DEMON_SIZE) k->x = 23*50 - BLUE_DEMON_SIZE;
+            if (k->y < 2*50) k->y = 2*50;
+            if (k->y > 14*50 - BLUE_DEMON_SIZE) k->y = 14*50 - BLUE_DEMON_SIZE;
             k->heal_cd--;
             if (k->heal_cd <= 0) {
                 // 向所有敌对单位发射治疗弹
@@ -2029,7 +2100,78 @@ void handle_game_level(GameState* state, GameResources* res) {
                     hb.dy = (hdy / hdist) * 12.5f;
                     state->bullets.push_back(hb);
                 }
+                for (int j = 0; j < state->purple_demons.size(); ++j) {
+                    PurpleDemon* pd = &state->purple_demons[j];
+                    if (pd->hp <= 0 || pd->hp >= PURPLE_DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false;
+                    hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (pd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (pd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
                 k->heal_cd = 120; // 2秒
+            }
+        }
+
+        // 紫色守护者 AI
+        for (int i = 0; i < state->purple_demons.size(); ++i) {
+            PurpleDemon* p = &state->purple_demons[i];
+            if (p->hp <= 0) { p->alive = false; p->death_frame++; continue; }
+            p->alive = true;
+            // 限制在地图中间矩形区域
+            if (p->x < 2*50) p->x = 2*50;
+            if (p->x > 23*50 - BLUE_DEMON_SIZE) p->x = 23*50 - BLUE_DEMON_SIZE;
+            if (p->y < 2*50) p->y = 2*50;
+            if (p->y > 14*50 - BLUE_DEMON_SIZE) p->y = 14*50 - BLUE_DEMON_SIZE;
+            if (p->charging) {
+                p->x += (int)(p->charge_dx * 12.0f);
+                p->y += (int)(p->charge_dy * 12.0f);
+                bool stop = false;
+                if (p->x < 2*50 || p->x > 23*50 - BLUE_DEMON_SIZE
+                    || p->y < 2*50 || p->y > 14*50 - BLUE_DEMON_SIZE) {
+                    if (p->x < 2*50) p->x = 2*50;
+                    if (p->x > 23*50 - BLUE_DEMON_SIZE) p->x = 23*50 - BLUE_DEMON_SIZE;
+                    if (p->y < 2*50) p->y = 2*50;
+                    if (p->y > 14*50 - BLUE_DEMON_SIZE) p->y = 14*50 - BLUE_DEMON_SIZE;
+                    stop = true;
+                }
+                if (!stop) {
+                    int pleft = p->x;
+                    int pright = p->x + BLUE_DEMON_SIZE;
+                    int ptop = p->y;
+                    int pbottom = p->y + BLUE_DEMON_SIZE;
+                    int pleft2 = state->player_pos.x + PLAYER_SIZE / 4;
+                    int pright2 = state->player_pos.x + PLAYER_SIZE * 2 / 3;
+                    int ptop2 = state->player_pos.y + PLAYER_SIZE / 3;
+                    int pbottom2 = state->player_pos.y + PLAYER_SIZE;
+                    if (pleft < pright2 && pright > pleft2 && ptop < pbottom2 && pbottom > ptop2) {
+                        state->player_hp--;
+                        if (state->player_hp < 0) state->player_hp = 0;
+                        stop = true;
+                    }
+                }
+                if (stop) {
+                    p->charging = false;
+                    p->charge_cd = 180;
+                }
+            } else {
+                p->charge_cd--;
+                if (p->charge_cd <= 0) {
+                    float pdx = (float)(state->player_pos.x + PLAYER_SIZE/2 - (p->x + BLUE_DEMON_SIZE/2));
+                    float pdy = (float)(state->player_pos.y + PLAYER_SIZE/2 - (p->y + BLUE_DEMON_SIZE/2));
+                    float pdist = sqrt(pdx*pdx + pdy*pdy);
+                    if (pdist <= 0) { pdx = 1; pdy = 0; pdist = 1; }
+                    p->charge_dx = pdx / pdist;
+                    p->charge_dy = pdy / pdist;
+                    p->charging = true;
+                }
             }
         }
 
@@ -2084,6 +2226,18 @@ void handle_game_level(GameState* state, GameResources* res) {
                         }
                     }
                 }
+                if (!healed) {
+                    for (int j = 0; j < state->purple_demons.size(); ++j) {
+                        PurpleDemon* pd = &state->purple_demons[j];
+                        if (pd->hp <= 0 || pd->hp >= PURPLE_DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > pd->x && bullet->x - 10 < pd->x + BLUE_DEMON_SIZE && bullet->y + 10 > pd->y && bullet->y - 10 < pd->y + BLUE_DEMON_SIZE) {
+                            pd->hp++;
+                            if (pd->hp > PURPLE_DEMON_MAX_HP) pd->hp = PURPLE_DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
                 if (healed) {
                     state->bullets.erase(state->bullets.begin() + i);
                     continue;
@@ -2114,6 +2268,19 @@ void handle_game_level(GameState* state, GameResources* res) {
                             bd->hp--;
                             hit = true;
                             if (bd->hp <= 0) { bd->alive = false; bd->death_frame = 0; }
+                            break;
+                        }
+                    }
+                }
+
+                if (!hit) {
+                    for (int j = 0; j < state->purple_demons.size(); ++j) {
+                        PurpleDemon* pd = &state->purple_demons[j];
+                        if (pd->hp <= 0) continue;
+                        if (bullet->x + 10 > pd->x && bullet->x - 10 < pd->x + BLUE_DEMON_SIZE && bullet->y + 10 > pd->y && bullet->y - 10 < pd->y + BLUE_DEMON_SIZE) {
+                            pd->hp--;
+                            hit = true;
+                            if (pd->hp <= 0) { pd->alive = false; pd->death_frame = 0; }
                             break;
                         }
                     }
@@ -2193,6 +2360,15 @@ void handle_game_level(GameState* state, GameResources* res) {
         draw_demon_animation(state, res);
         draw_bullets(state);
 
+        if (state->skill_orb_active) {
+            setfillcolor(RGB(255, 255, 0));
+            setlinecolor(RGB(200, 200, 0));
+            fillrectangle(state->skill_orb_pos.x, state->skill_orb_pos.y,
+                state->skill_orb_pos.x + 30, state->skill_orb_pos.y + 30);
+            rectangle(state->skill_orb_pos.x, state->skill_orb_pos.y,
+                state->skill_orb_pos.x + 30, state->skill_orb_pos.y + 30);
+        }
+
         // 绘制 blue_demons（蓝色守护者）
         for (int i = 0; i < state->blue_demons.size(); ++i) {
             BlueDemon* bd = &state->blue_demons[i];
@@ -2221,6 +2397,15 @@ void handle_game_level(GameState* state, GameResources* res) {
             fillcircle(kd->x + BLUE_DEMON_SIZE/2, kd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
             draw_black_demon_hp_bar(kd);
         }
+
+        // 紫色守护者
+        for (int i = 0; i < state->purple_demons.size(); ++i) {
+            PurpleDemon* pd = &state->purple_demons[i];
+            if (pd->hp <= 0) continue;
+            setfillcolor(RGB(160, 50, 220));
+            fillcircle(pd->x + BLUE_DEMON_SIZE/2, pd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_purple_demon_hp_bar(pd);
+        }
         setcolor(WHITE);//暂停键
         setfillcolor(BLACK);
         fillrectangle(SCREEN_WIDTH - 60, 10, SCREEN_WIDTH - 10, 60);
@@ -2245,17 +2430,18 @@ void handle_game_level(GameState* state, GameResources* res) {
             }
         }
 
-        // 所有怪物死亡
-        if (state->demons.empty()) {
-            if (!state->can_wall) {
-                cleardevice();
-                putimage(0, 0, &res->bg_player_talk);
-                settextstyle(50, 0, _T("Consolas"));
-                setcolor(BLACK);
-                outtextxy(50, SCREEN_HEIGHT - 220, _T("I feel like I've mastered something new"));
-                FlushBatchDraw();
-                Sleep(3000);
-                state->can_wall = true;
+        // 所有敌对单位死亡后生成技能宝珠
+        {
+            bool all_dead = true;
+            for (int _i = 0; _i < state->demons.size(); ++_i) if (state->demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->blue_demons.size(); ++_i) if (state->blue_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->gray_demons.size(); ++_i) if (state->gray_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->black_demons.size(); ++_i) if (state->black_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->purple_demons.size(); ++_i) if (state->purple_demons[_i].hp > 0) all_dead = false;
+            if (all_dead && !state->can_wall && !state->skill_orb_active) {
+                state->skill_orb_pos.x = state->player_pos.x;
+                state->skill_orb_pos.y = state->player_pos.y + PLAYER_SIZE + 10;
+                state->skill_orb_active = true;
             }
         }
 
@@ -2357,7 +2543,7 @@ void save_singleplayer_game(GameState* state) {
     int level = (state->bg_mode == 2) ? 2 : 1;
     fprintf(fp, "%d\n", level);
     fprintf(fp, "%d %d\n", state->player_pos.x, state->player_pos.y);
-    fprintf(fp, "%d %d %d %d %d\n", state->player_hp, state->player_direction, state->can_wall ? 1 : 0, state->time_cost, state->wall_num);
+    fprintf(fp, "%d %d %d %d %d %d %d %d\n", state->player_hp, state->player_direction, state->can_wall ? 1 : 0, state->time_cost, state->wall_num, state->skill_orb_active ? 1 : 0, state->skill_orb_pos.x, state->skill_orb_pos.y);
 
     // 保存demons
     fprintf(fp, "%d\n", (int)state->demons.size());
@@ -2387,7 +2573,14 @@ void save_singleplayer_game(GameState* state) {
         fprintf(fp, "%d %d %d %d %d %d\n", k->x, k->y, k->hp, k->alive ? 1 : 0, k->heal_cd, k->death_frame);
     }
 
-    // 保存ufo保存ufo保存ufo
+    // 保存 purple_demons（紫色守护者）
+    fprintf(fp, "%d\n", (int)state->purple_demons.size());
+    for (size_t i = 0; i < state->purple_demons.size(); ++i) {
+        PurpleDemon* p = &state->purple_demons[i];
+        fprintf(fp, "%d %d %d %d %d %f %f %d\n", p->x, p->y, p->hp, p->alive ? 1 : 0, p->charge_cd, p->charge_dx, p->charge_dy, p->charging ? 1 : 0);
+    }
+
+    // 保存ufo保存ufo保存ufo保存ufo
     fprintf(fp, "%d\n", (int)state->ufo.size());
     for (size_t i = 0; i < state->ufo.size(); ++i) {
         Ufo* u = &state->ufo[i];
@@ -2412,8 +2605,11 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
 
     fscanf(fp, "%d %d", &state->player_pos.x, &state->player_pos.y);
     int can_wall_int = 0;
-    fscanf(fp, "%d %d %d %d %d", &state->player_hp, &state->player_direction, &can_wall_int, &state->time_cost, &state->wall_num);
+    int orb_active_int = 0;
+    fscanf(fp, "%d %d %d %d %d %d %d %d", &state->player_hp, &state->player_direction, &can_wall_int, &state->time_cost, &state->wall_num, &orb_active_int, &state->skill_orb_pos.x, &state->skill_orb_pos.y);
     state->can_wall = can_wall_int ? true : false;
+    state->skill_orb_active = orb_active_int ? true : false;
+    state->skill_orb_pickup = false;
 
     // 加载 demons
     int demons_count = 0;
@@ -2473,7 +2669,24 @@ static bool parse_saved_state_from_file(GameState* state, FILE* fp) {
         }
     }
 
-    // 加载 ufo加载 ufo加载 ufo
+    // 加载 purple_demons（紫色守护者）
+    int purple_count = 0;
+    fscanf(fp, "%d", &purple_count);
+    state->purple_demons.clear();
+    for (int i = 0; i < purple_count; ++i) {
+        PurpleDemon p = {0};
+        int alive_int = 1;
+        int charging_int = 0;
+        fscanf(fp, "%d %d %d %d %d %f %f %d", &p.x, &p.y, &p.hp, &alive_int, &p.charge_cd, &p.charge_dx, &p.charge_dy, &charging_int);
+        p.alive = alive_int ? true : false;
+        p.charging = charging_int ? true : false;
+        if (p.alive && p.hp > 0) {
+            if (p.charge_cd <= 0 || p.charge_cd > 100000) p.charge_cd = 60;
+            state->purple_demons.push_back(p);
+        }
+    }
+
+    // 加载 ufo加载 ufo加载 ufo加载 ufo
     int ufo_count = 0;
     fscanf(fp, "%d", &ufo_count);
     state->ufo.clear();
@@ -2646,7 +2859,17 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                     if (state->can_wall && next_level_pos) {
                         handle_game_level2(state, res);
                     }
-                    if (state->quit_hall) { EndBatchDraw(); return; }
+                    if (state->quit_hall) {
+                        EndBatchDraw();
+                        return;
+                    }
+                    if (state->skill_orb_active) {
+                        int fdx = state->player_pos.x - state->skill_orb_pos.x;
+                        int fdy = state->player_pos.y - state->skill_orb_pos.y;
+                        if (abs(fdx) < 80 && abs(fdy) < 80) {
+                            state->skill_orb_pickup = true;
+                        }
+                    }
                     break;
                 }
             }
@@ -2688,6 +2911,19 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                 state->wall_map[msg.y / 50][msg.x / 50] = 1;
                 state->wall_num++;
             }
+        }
+
+        if (state->skill_orb_pickup) {
+            state->skill_orb_pickup = false;
+            state->skill_orb_active = false;
+            cleardevice();
+            putimage(0, 0, &res->bg_player_talk);
+            settextstyle(50, 0, _T("Consolas"));
+            setcolor(BLACK);
+            outtextxy(50, SCREEN_HEIGHT - 220, _T("I feel like I've mastered something new"));
+            FlushBatchDraw();
+            Sleep(3000);
+            state->can_wall = true;
         }
 
         // 玩家移动
@@ -2868,6 +3104,10 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                 if (map[cy2/50][cx2/50]) blocked = true;
                 if (!blocked) { k->x = new_x; k->y = new_y; }
             }
+            if (k->x < 2*50) k->x = 2*50;
+            if (k->x > 23*50 - BLUE_DEMON_SIZE) k->x = 23*50 - BLUE_DEMON_SIZE;
+            if (k->y < 2*50) k->y = 2*50;
+            if (k->y > 14*50 - BLUE_DEMON_SIZE) k->y = 14*50 - BLUE_DEMON_SIZE;
             k->heal_cd--;
             if (k->heal_cd <= 0) {
                 for (int j = 0; j < state->demons.size(); ++j) {
@@ -2915,7 +3155,76 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                     hb.dy = (hdy / hdist) * 12.5f;
                     state->bullets.push_back(hb);
                 }
+                for (int j = 0; j < state->purple_demons.size(); ++j) {
+                    PurpleDemon* pd = &state->purple_demons[j];
+                    if (pd->hp <= 0 || pd->hp >= PURPLE_DEMON_MAX_HP) continue;
+                    Bullet hb;
+                    hb.friendly = false; hb.is_heal = true;
+                    hb.x = k->x + BLUE_DEMON_SIZE/2;
+                    hb.y = k->y + BLUE_DEMON_SIZE/2;
+                    float hdx = (pd->x + BLUE_DEMON_SIZE/2) - hb.x;
+                    float hdy = (pd->y + BLUE_DEMON_SIZE/2) - hb.y;
+                    float hdist = sqrt(hdx*hdx + hdy*hdy);
+                    if (hdist <= 0) hdist = 1;
+                    hb.dx = (hdx / hdist) * 12.5f;
+                    hb.dy = (hdy / hdist) * 12.5f;
+                    state->bullets.push_back(hb);
+                }
                 k->heal_cd = 120;
+            }
+        }
+
+        // 紫色守护者 AI
+        for (int i = 0; i < state->purple_demons.size(); ++i) {
+            PurpleDemon* p = &state->purple_demons[i];
+            if (p->hp <= 0) { p->alive = false; p->death_frame++; continue; }
+            p->alive = true;
+            if (p->x < 2*50) p->x = 2*50;
+            if (p->x > 23*50 - BLUE_DEMON_SIZE) p->x = 23*50 - BLUE_DEMON_SIZE;
+            if (p->y < 2*50) p->y = 2*50;
+            if (p->y > 14*50 - BLUE_DEMON_SIZE) p->y = 14*50 - BLUE_DEMON_SIZE;
+            if (p->charging) {
+                p->x += (int)(p->charge_dx * 12.0f);
+                p->y += (int)(p->charge_dy * 12.0f);
+                bool stop = false;
+                if (p->x < 2*50 || p->x > 23*50 - BLUE_DEMON_SIZE
+                    || p->y < 2*50 || p->y > 14*50 - BLUE_DEMON_SIZE) {
+                    if (p->x < 2*50) p->x = 2*50;
+                    if (p->x > 23*50 - BLUE_DEMON_SIZE) p->x = 23*50 - BLUE_DEMON_SIZE;
+                    if (p->y < 2*50) p->y = 2*50;
+                    if (p->y > 14*50 - BLUE_DEMON_SIZE) p->y = 14*50 - BLUE_DEMON_SIZE;
+                    stop = true;
+                }
+                if (!stop) {
+                    int pleft = p->x;
+                    int pright = p->x + BLUE_DEMON_SIZE;
+                    int ptop = p->y;
+                    int pbottom = p->y + BLUE_DEMON_SIZE;
+                    int pleft2 = state->player_pos.x + PLAYER_SIZE / 4;
+                    int pright2 = state->player_pos.x + PLAYER_SIZE * 2 / 3;
+                    int ptop2 = state->player_pos.y + PLAYER_SIZE / 3;
+                    int pbottom2 = state->player_pos.y + PLAYER_SIZE;
+                    if (pleft < pright2 && pright > pleft2 && ptop < pbottom2 && pbottom > ptop2) {
+                        state->player_hp--;
+                        if (state->player_hp < 0) state->player_hp = 0;
+                        stop = true;
+                    }
+                }
+                if (stop) {
+                    p->charging = false;
+                    p->charge_cd = 180;
+                }
+            } else {
+                p->charge_cd--;
+                if (p->charge_cd <= 0) {
+                    float pdx = (float)(state->player_pos.x + PLAYER_SIZE/2 - (p->x + BLUE_DEMON_SIZE/2));
+                    float pdy = (float)(state->player_pos.y + PLAYER_SIZE/2 - (p->y + BLUE_DEMON_SIZE/2));
+                    float pdist = sqrt(pdx*pdx + pdy*pdy);
+                    if (pdist <= 0) { pdx = 1; pdy = 0; pdist = 1; }
+                    p->charge_dx = pdx / pdist;
+                    p->charge_dy = pdy / pdist;
+                    p->charging = true;
+                }
             }
         }
 
@@ -3002,6 +3311,18 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                         }
                     }
                 }
+                if (!healed) {
+                    for (int j = 0; j < state->purple_demons.size(); ++j) {
+                        PurpleDemon* pd = &state->purple_demons[j];
+                        if (pd->hp <= 0 || pd->hp >= PURPLE_DEMON_MAX_HP) continue;
+                        if (bullet->x + 10 > pd->x && bullet->x - 10 < pd->x + BLUE_DEMON_SIZE && bullet->y + 10 > pd->y && bullet->y - 10 < pd->y + BLUE_DEMON_SIZE) {
+                            pd->hp++;
+                            if (pd->hp > PURPLE_DEMON_MAX_HP) pd->hp = PURPLE_DEMON_MAX_HP;
+                            healed = true;
+                            break;
+                        }
+                    }
+                }
                 if (healed) {
                     state->bullets.erase(state->bullets.begin() + i);
                     continue;
@@ -3040,6 +3361,18 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
                     }
                 }
                 if (hit) { state->bullets.erase(state->bullets.begin() + i); continue; }
+
+                // 紫色守护者碰撞
+                for (int j = 0; j < state->purple_demons.size(); ++j) {
+                    PurpleDemon* pd = &state->purple_demons[j];
+                    if (pd->hp <= 0) continue;
+                    if (bullet->x + 10 > pd->x && bullet->x - 10 < pd->x + BLUE_DEMON_SIZE && bullet->y + 10 > pd->y && bullet->y - 10 < pd->y + BLUE_DEMON_SIZE) {
+                        pd->hp--;
+                        if (pd->hp <= 0) { pd->alive = false; pd->death_frame = 0; }
+                        state->bullets.erase(state->bullets.begin() + i);
+                        break;
+                    }
+                }
 
                 // 黑色守护者碰撞
                 for (int j = 0; j < state->black_demons.size(); ++j) {
@@ -3106,6 +3439,15 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
         }
         draw_bullets(state);
 
+        if (state->skill_orb_active) {
+            setfillcolor(RGB(255, 255, 0));
+            setlinecolor(RGB(200, 200, 0));
+            fillrectangle(state->skill_orb_pos.x, state->skill_orb_pos.y,
+                state->skill_orb_pos.x + 30, state->skill_orb_pos.y + 30);
+            rectangle(state->skill_orb_pos.x, state->skill_orb_pos.y,
+                state->skill_orb_pos.x + 30, state->skill_orb_pos.y + 30);
+        }
+
         // 蓝色守护者
         for (int i = 0; i < state->blue_demons.size(); ++i) {
             BlueDemon* bd = &state->blue_demons[i];
@@ -3133,11 +3475,38 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
             draw_black_demon_hp_bar(kd);
         }
 
+        // 紫色守护者
+        for (int i = 0; i < state->purple_demons.size(); ++i) {
+            PurpleDemon* pd = &state->purple_demons[i];
+            if (pd->hp <= 0) continue;
+            setfillcolor(RGB(160, 50, 220));
+            fillcircle(pd->x + BLUE_DEMON_SIZE/2, pd->y + BLUE_DEMON_SIZE/2, BLUE_DEMON_SIZE/2);
+            draw_purple_demon_hp_bar(pd);
+        }
+
         // 暂停键
         setcolor(WHITE); setfillcolor(BLACK);
         fillrectangle(SCREEN_WIDTH - 60, 10, SCREEN_WIDTH - 10, 60);
         settextstyle(40, 0, _T("Consolas")); outtextxy(SCREEN_WIDTH - 53, 15, _T("||"));
 
+        if (state->skill_orb_active) {
+            int odx = state->player_pos.x - state->skill_orb_pos.x;
+            int ody = state->player_pos.y - state->skill_orb_pos.y;
+            if (abs(odx) < 80 && abs(ody) < 80) {
+                settextstyle(40, 0, _T("Consolas"));
+                setcolor(WHITE);
+                outtextxy(400, SCREEN_HEIGHT - 50, _T("Press F to acquire skill"));
+            }
+        }
+        if (state->skill_orb_active) {
+            int odx = state->player_pos.x - state->skill_orb_pos.x;
+            int ody = state->player_pos.y - state->skill_orb_pos.y;
+            if (abs(odx) < 80 && abs(ody) < 80) {
+                settextstyle(40, 0, _T("Consolas"));
+                setcolor(WHITE);
+                outtextxy(400, SCREEN_HEIGHT - 50, _T("Press F to acquire skill"));
+            }
+        }
         if (state->can_wall && state->bg_mode==1) {
             settextstyle(50, 0, _T("Consolas"));
             if (next_level_pos) {
@@ -3169,17 +3538,18 @@ void resume_singleplayer_game(GameState* state, GameResources* res) {
 
         // （安全窗已移除）
 
-        // 所有怪物死亡
-        if (state->demons.empty()) {
-            if (!state->can_wall) {
-                cleardevice();
-                putimage(0, 0, &res->bg_player_talk);
-                settextstyle(50, 0, _T("Consolas"));
-                setcolor(BLACK);
-                outtextxy(50, SCREEN_HEIGHT - 220, _T("I feel like I've mastered something new"));
-                FlushBatchDraw();
-                Sleep(3000);
-                state->can_wall = true;
+        // 所有敌对单位死亡后生成技能宝珠
+        {
+            bool all_dead = true;
+            for (int _i = 0; _i < state->demons.size(); ++_i) if (state->demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->blue_demons.size(); ++_i) if (state->blue_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->gray_demons.size(); ++_i) if (state->gray_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->black_demons.size(); ++_i) if (state->black_demons[_i].hp > 0) all_dead = false;
+            for (int _i = 0; _i < state->purple_demons.size(); ++_i) if (state->purple_demons[_i].hp > 0) all_dead = false;
+            if (all_dead && !state->can_wall && !state->skill_orb_active) {
+                state->skill_orb_pos.x = state->player_pos.x;
+                state->skill_orb_pos.y = state->player_pos.y + PLAYER_SIZE + 10;
+                state->skill_orb_active = true;
             }
         }
 
@@ -3346,6 +3716,19 @@ void handle_game_level2(GameState* state, GameResources* res) {
                 state->wall_map[msg.y / 50][msg.x / 50] = 1;
                 state->wall_num++;
             }
+        }
+
+        if (state->skill_orb_pickup) {
+            state->skill_orb_pickup = false;
+            state->skill_orb_active = false;
+            cleardevice();
+            putimage(0, 0, &res->bg_player_talk);
+            settextstyle(50, 0, _T("Consolas"));
+            setcolor(BLACK);
+            outtextxy(50, SCREEN_HEIGHT - 220, _T("I feel like I've mastered something new"));
+            FlushBatchDraw();
+            Sleep(3000);
+            state->can_wall = true;
         }
 
         // 玩家移动
